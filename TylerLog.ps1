@@ -1,11 +1,19 @@
 
-# TylerLog FINAL 4 - PS7-friendly, CSV-based, advanced crypto + dashboard
+# TYLER OS LOG APP — 4.1
+# EXE-safe, PS7-friendly, AppData-based logger with manual backups
 
-# Directories
-$ScriptDir = Split-Path -Parent $PSCommandPath
-$DataDir   = Join-Path $ScriptDir "data"
-if (-not (Test-Path $DataDir)) {
-    New-Item -ItemType Directory -Path $DataDir | Out-Null
+# Resolve base app directory in LocalAppData (works for .ps1 and .exe)
+$LocalAppData = [Environment]::GetFolderPath('LocalApplicationData')
+$AppRoot     = Join-Path $LocalAppData "TylerLog"
+$DataDir     = Join-Path $AppRoot "data"
+$ExportDir   = Join-Path $AppRoot "export"
+$BackupRoot  = Join-Path $AppRoot "backups"
+
+# Ensure core directories exist
+foreach ($dir in @($AppRoot, $DataDir, $ExportDir, $BackupRoot)) {
+    if (-not (Test-Path $dir)) {
+        New-Item -ItemType Directory -Path $dir | Out-Null
+    }
 }
 
 function Get-LogPath {
@@ -57,7 +65,7 @@ function Get-PriceFromCoinGecko {
 
     $sym = $Asset.ToUpper()
     if (-not $map.ContainsKey($sym)) {
-        Write-Host "Asset $sym is not configured for auto-price. You can still enter it manually." -ForegroundColor Yellow
+        Write-Host "Asset $sym is not configured for auto-price. Enter manually if you like." -ForegroundColor Yellow
         return $null
     }
 
@@ -90,7 +98,6 @@ function Append-CsvRow {
     $obj  = New-Object PSObject -Property $Row
 
     if (-not (Test-Path $path)) {
-        # first time: create with headers
         $obj | Export-Csv -Path $path -NoTypeInformation -Encoding UTF8
     } else {
         $obj | Export-Csv -Path $path -NoTypeInformation -Encoding UTF8 -Append
@@ -369,44 +376,70 @@ function Show-Dashboard {
     Write-Host ("  Entries : {0}" -f $creative.Count)
 
     Write-Host ""
-    Write-Host ("Data folder: {0}" -f $DataDir) -ForegroundColor DarkGray
+    Write-Host ("Log root: {0}" -f $AppRoot) -ForegroundColor DarkGray
 }
 
 function Export-CSV-All {
     Write-Host ""
     Write-Host "=== Export Logs to CSV ===" -ForegroundColor Cyan
-    $exportDir = Join-Path $ScriptDir "export"
-    if (-not (Test-Path $exportDir)) {
-        New-Item -ItemType Directory -Path $exportDir | Out-Null
-    }
 
     $names = @("money", "habits", "crypto", "creative")
     foreach ($name in $names) {
         $data = Get-Log -Name $name
         if ($data.Count -gt 0) {
-            $dest = Join-Path $exportDir ("{0}.csv" -f $name)
+            $dest = Join-Path $ExportDir ("{0}.csv" -f $name)
             $data | Export-Csv -Path $dest -NoTypeInformation -Encoding UTF8
             Write-Host ("Exported {0} entries to {1}" -f $name, $dest) -ForegroundColor Green
         } else {
             Write-Host ("No entries to export for {0}." -f $name) -ForegroundColor DarkGray
         }
     }
+    Write-Host ""
+    Write-Host ("Exports folder: {0}" -f $ExportDir) -ForegroundColor DarkGray
+}
+
+function Backup-Logs {
+    Write-Host ""
+    Write-Host "=== Backup Logs ===" -ForegroundColor Cyan
+
+    $timestamp = Get-Date -Format "yyyy-MM-dd_HH-mm-ss"
+    $dest = Join-Path $BackupRoot $timestamp
+    New-Item -ItemType Directory -Path $dest | Out-Null
+
+    $csvFiles = Get-ChildItem -Path $DataDir -Filter "*.csv" -File -ErrorAction SilentlyContinue
+    if ($csvFiles.Count -eq 0) {
+        Write-Host "No CSV logs found to back up." -ForegroundColor DarkGray
+    } else {
+        foreach ($f in $csvFiles) {
+            Copy-Item -Path $f.FullName -Destination $dest
+        }
+        Write-Host ("Backed up {0} file(s) to {1}" -f $csvFiles.Count, $dest) -ForegroundColor Green
+    }
+}
+
+function Show-Banner {
+    Write-Host ""
+    Write-Host "========================================"
+    Write-Host "        TYLER OS LOG APP — 4.1"
+    Write-Host "========================================"
+    Write-Host ("Log root: {0}" -f $AppRoot)
+    Write-Host ""
 }
 
 function Show-MainMenu {
     Write-Host ""
-    Write-Host "========================================"
-    Write-Host "      TYLER OS LOG APP - FINAL 4"
-    Write-Host "========================================"
     Write-Host "1) Money Log"
     Write-Host "2) Habit / Workout Log"
     Write-Host "3) Crypto Log (Advanced)"
     Write-Host "4) Creative Log"
     Write-Host "5) Dashboard (7 days)"
     Write-Host "6) Export all to CSV"
+    Write-Host "7) Backup all logs now"
     Write-Host "Q) Quit"
     Write-Host ""
 }
+
+Show-Banner
 
 while ($true) {
     Show-MainMenu
@@ -418,6 +451,7 @@ while ($true) {
         "4" { Log-Creative; Pause }
         "5" { Show-Dashboard; Pause }
         "6" { Export-CSV-All; Pause }
+        "7" { Backup-Logs; Pause }
         "Q" { break }
         default {
             Write-Host "Invalid choice. Try again." -ForegroundColor Yellow
